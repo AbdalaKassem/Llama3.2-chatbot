@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot</title>
+    <link rel="stylesheet" href="../static/style.css">
+</head>
+
+<body>
+    <div class="chat-container">
+        <!-- Chat List Section -->
+        <div id="chat-list-container">
+            <button id="new-chat-btn">New Chat</button>
+            <div id="chat-list">
+                <!-- Chat items will be dynamically added here -->
+            </div>
+        </div>
+
+        <!-- Chat Box Section -->
+        <div id="chat-box">
+            <h1 class="chat-title">Chat with Llama</h1>
+            <div id="chat-output"></div>
+            <div class="input-container">
+                <textarea id="user-message" placeholder="Type your message..."></textarea>
+                <button id="send-btn">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentChatId = null;
+
+        // Fetch and display chat list
+        async function loadChatList() {
+            try {
+                const response = await fetch('/chats');
+                const chatList = await response.json();
+                const chatListContainer = document.getElementById('chat-list');
+                chatListContainer.innerHTML = '';
+
+                // Reverse the chat list to display newest chats at the bottom
+                chatList.reverse();
+
+                chatList.forEach(chat => {
+                    const chatItem = document.createElement('div');
+                    chatItem.className = 'chat-item';
+                    chatItem.textContent = chat.title;
+                    chatItem.dataset.chatId = chat.id;
+
+                    chatItem.addEventListener('click', () => {
+                        loadChat(chat.id);
+                    });
+
+                    chatListContainer.appendChild(chatItem);
+
+                    // Select the newly created chat
+                    if (chat.id === currentChatId) {
+                        chatItem.classList.add('selected');
+                    }
+                });
+
+                // Scroll to the bottom of the chat list
+                chatListContainer.scrollTop = chatListContainer.scrollHeight;
+            } catch (error) {
+                console.error('Error loading chat list:', error);
+            }
+        }
+
+        // Load specific chat
+            async function loadChat(chatId) {
+                try {
+                    const response = await fetch(`/chat/${chatId}`);
+                    const chatData = await response.json();
+                    currentChatId = chatId;
+
+                    document.querySelector('.chat-title').textContent = chatData.title;
+                    const chatOutput = document.getElementById('chat-output');
+                    chatOutput.innerHTML = '';
+
+                    chatData.messages.forEach(message => {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = `message ${message.role}-message`;
+                        messageDiv.innerHTML = `<strong>${message.role === 'user' ? 'User' : 'Bot'}</strong> ${message.content}`;
+                        chatOutput.appendChild(messageDiv);
+                    });
+
+                    // Highlight the selected chat item
+                    const chatItems = document.querySelectorAll('.chat-item');
+                    chatItems.forEach(item => item.classList.remove('selected'));
+                    const selectedChatItem = document.querySelector(`.chat-item[data-chat-id="${chatId}"]`);
+                    if (selectedChatItem) {
+                        selectedChatItem.classList.add('selected');
+                    }
+                } catch (error) {
+                    console.error('Error loading chat:', error);
+                }
+            }
+
+        // Start a new chat
+        document.getElementById('new-chat-btn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/new-chat', { method: 'POST' });
+                const newChat = await response.json();
+                currentChatId = newChat.id;
+
+                document.querySelector('.chat-title').textContent = 'Chat with Llama';
+                document.getElementById('chat-output').innerHTML = '';
+                loadChatList().then(() => {
+                    const newChatItem = document.querySelector(`[data-chat-id="${newChat.id}"]`);
+                    if (newChatItem) {
+                        newChatItem.classList.add('selected');
+                        newChatItem.click();
+                    }
+                });
+            } catch (error) {
+                console.error('Error creating new chat:', error);
+            }
+        });
+
+        // Send a message
+        document.getElementById('send-btn').addEventListener('click', async () => {
+            const message = document.getElementById('user-message').value;
+            if (!message.trim()) return;
+
+            const chatOutput = document.getElementById('chat-output');
+            chatOutput.innerHTML += `<div class="message user-message"><strong>User</strong> ${message}</div>`;
+            document.getElementById('user-message').value = '';
+            chatOutput.scrollTop = chatOutput.scrollHeight;
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message, chat_id: currentChatId })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json();
+
+                // Update chat title if it's the first message
+                if (!currentChatId) {
+                    currentChatId = data.chat_id;
+                    document.querySelector('.chat-title').textContent = data.title;
+                }
+
+                chatOutput.innerHTML += `<div class="message assistant-message"><strong>Bot</strong> ${data.response}</div>`;
+                chatOutput.scrollTop = chatOutput.scrollHeight;
+
+                // Update chat list after the first message
+                loadChatList();
+            } catch (error) {
+                console.error('Error sending message:', error);
+                chatOutput.innerHTML += `<div class="message assistant-message"><strong>Bot</strong> Sorry, there was an error. Please try again.</div>`;
+            }
+        });
+
+        // Initialize the chat list
+        loadChatList();
+
+        document.getElementById('user-message').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                document.getElementById('send-btn').click();
+            }
+        });
+    </script>
+</body>
+
+</html>
+
